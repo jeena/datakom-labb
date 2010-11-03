@@ -92,23 +92,34 @@ final class HttpRequest implements Runnable
 	System.out.println("  " + requestLine);
 
 	String[] tokens = requestLine.split(" ");
-	// for(String token : tokens)
+
+	String response = "";
+	if(tokens[0].equals(HTTP_METHOD.GET)){
+	    response += HTTPVERSION + " ";
+	    FileInputStream filein;
+	    try{
+		filein = new FileInputStream(tokens[1]);
+		response += "200 OK "+CRLF+"kottedala"+CRLF; 
+		outs.writeChars(response);
+		sendBytes(filein,outs);
+	    }
+	    catch (FileNotFoundException e){
+		response += "404 Not Found"+CRLF+"kottedala"+CRLF;
+		outs.writeChars(response);
+		//		throw e;
+	    }
+	} else
+	    outs.writeChars(response + "400 Bad Request"+CRLF+"kotten"+CRLF);
+	
+		    // for(String token : tokens)
 	//     System.out.println("---> " + token);
-	sendResponse(tokens[1],outs);
+	    //	sendResponse(tokens[1],outs);
 	
 
 	// Close streams and sockets
 	outs.close();
 	br.close();
 	socket.close();
-    }
-
-    private void sendResponse(String f,DataOutputStream     outs)
-    throws Exception{
-	String response = HTTPVERSION+" 200 OK "+CRLF+"kottedala"+CRLF;
-	outs.writeChars(response);
-	sendBytes(new FileInputStream(f),outs);
-
     }
     private static void sendBytes(FileInputStream  fins,
 				  OutputStream     outs) throws Exception
