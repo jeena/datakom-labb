@@ -54,6 +54,12 @@ final class HttpRequest implements Runnable
 
     final static String HTTPVERSION = "HTTP/1.0";
     final static String CRLF = "\r\n";
+    final static String Response200 = HTTPVERSION + " 200 OK "+CRLF;
+    final static String Response404 = HTTPVERSION + " 404 Not Found "+CRLF;
+    final static String Response400 = HTTPVERSION + " 400 Bad Request "+CRLF;
+    final static String Response501 = HTTPVERSION + " 501 Not Implemented "+CRLF;
+    final static String Location = " datalabb "+CRLF;
+
     Socket socket;
 
     // Constructor
@@ -81,7 +87,7 @@ final class HttpRequest implements Runnable
 
 	// Set up input stream filters
 	BufferedReader br = new BufferedReader(new InputStreamReader(ins));
-    
+	Date d = new Date();
 
 	// Get the request line of the HTTP request
 	String requestLine = br.readLine();
@@ -91,35 +97,58 @@ final class HttpRequest implements Runnable
 	System.out.println("Request:");
 	System.out.println("  " + requestLine);
 
-	String[] tokens = requestLine.split(" ");
-
-	String response = "";
-	if(tokens[0].equals(HTTP_METHOD.GET)){
-	    response += HTTPVERSION + " ";
+	String[] tokens = requestLine.split("\\s+");
+	//System.out.println("-->"+tokens.length);
+	String Request = tokens[0];
+	if(tokens.length != 3){
+	    System.out.println("Wrong number of arguments in request!");
+	    outs.writeChars(Response400+Location+getDateString(d));
+	}
+	else if(tokens[1].charAt(0) != '/'){
+	    System.out.println("illegal url");
+	    outs.writeChars(Response501+Location+getDateString(d));
+	}
+	else if(Request.equals(HTTP_METHOD.GET) || Request.equals(HTTP_METHOD.HEAD)){
 	    FileInputStream filein;
 	    try{
-		filein = new FileInputStream(tokens[1]);
-		response += "200 OK "+CRLF+"kottedala"+CRLF; 
+		File f = new File("." +tokens[1]);
+		filein = new FileInputStream(f);
+		String response = createHeader(d,f);
 		outs.writeChars(response);
-		sendBytes(filein,outs);
+		if(Request.equals(HTTP_METHOD.GET))
+		   sendBytes(filein,outs);
 	    }
 	    catch (FileNotFoundException e){
-		response += "404 Not Found"+CRLF+"kottedala"+CRLF;
-		outs.writeChars(response);
-		//		throw e;
+		outs.writeChars(Response404+getDateString(d));
 	    }
-	} else
-	    outs.writeChars(response + "400 Bad Request"+CRLF+"kotten"+CRLF);
+	} else if(Request.equals(HTTP_METHOD.POST)){
+	    outs.writeChars(Response501+getDateString(d));
+	}
+	else
+	    outs.writeChars(Response400+getDateString(d));
 	
-		    // for(String token : tokens)
-	//     System.out.println("---> " + token);
-	    //	sendResponse(tokens[1],outs);
 	
-
 	// Close streams and sockets
 	outs.close();
 	br.close();
 	socket.close();
+    }
+
+    private String getDateString(Date d){
+	return "Date: "+d.toString()+CRLF;
+    }
+
+    private String createHeader(Date d, File f){
+	String response = Response200;
+	response += getDateString(d);
+	response += "Location: " + f.getName() +CRLF;
+	response += "Server: Labbserver" + CRLF;
+	response += "Allow: " + HTTP_METHOD.GET + " " + HTTP_METHOD.HEAD+CRLF;
+	response += "Content-Length: " + f.length() +CRLF;
+	response += "Content-Type: " + contentType(f.getName()) +CRLF;
+	response += "Last-Modified: " + new Date(f.lastModified()).toString() +CRLF;
+	return response;
+
     }
     private static void sendBytes(FileInputStream  fins,
 				  OutputStream     outs) throws Exception
