@@ -124,9 +124,9 @@ final class HttpRequest implements Runnable
 				// Close streams and sockets
 				try	{
 					
+					br.close();
 					outs.close();
 					socket.close();	
-					br.close();
 					
 				} catch (Exception e3) {
 					
@@ -142,7 +142,12 @@ final class HttpRequest implements Runnable
 	{
 		// Get the request line of the HTTP request
 		String requestLine = br.readLine();
-
+		
+		if (requestLine == null) {
+			WebServer.errLog("Request is empty");
+			return;
+		}
+		
 		// Display the request line
 		WebServer.log("[Request] " + requestLine);
 
@@ -150,7 +155,7 @@ final class HttpRequest implements Runnable
 		String[] tokens = requestLine.split(" ");
 		
 		String Request = tokens[0];
-		if(tokens.length != 3) {
+		if(tokens.length != 3 || tokens[0].length() == 0 || tokens[1].length() == 0 || tokens[2].length() == 0) {
 					
 			WebServer.errLog("Wrong number of arguments in request!");
 			
