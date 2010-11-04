@@ -44,147 +44,180 @@ public final class WebServer
 
 final class HttpRequest implements Runnable
 {
-    // Constants
-    //   Recognized HTTP methods
-    final static class HTTP_METHOD
-    {
-			final static String GET  = "GET";
-			final static String HEAD = "HEAD";
-			final static String POST = "POST";
-    }
+	// Constants
+	final static String HTTP_VERSION = "HTTP/1.0";
+	final static String CRLF = "\r\n";
 
-    final static String HTTPVERSION = "HTTP/1.0";
-    final static String CRLF = "\r\n";
-    final static String RESPONSE_200 = HTTPVERSION + " 200 OK " + CRLF;
-    final static String RESPONSE_404 = HTTPVERSION + " 404 Not Found " + CRLF;
-    final static String RESPONSE_400 = HTTPVERSION + " 400 Bad Request " + CRLF;
-    final static String RESPONSE_501 = HTTPVERSION + " 501 Not Implemented " + CRLF;
-    final static String LOCATION = " datalabb " + CRLF;
+	//   Recognized HTTP methods
+	final static class HTTP_METHOD
+	{
+		final static String GET  = "GET";
+		final static String HEAD = "HEAD";
+		final static String POST = "POST";
+	}
+	
+	final static class HTTP_RESPONSE
+	{
+		final static String OK = HTTP_VERSION + " 200 OK " + CRLF;
+		final static String NOT_FOUND = HTTP_VERSION + " 404 Not Found " + CRLF;
+		final static String BAD_REQUEST = HTTP_VERSION + " 400 Bad Request " + CRLF;
+		final static String INTERNAL_SERVER_ERROR = HTTP_VERSION + " 500 Internal Server Error " + CRLF;
+		final static String NOT_IMPLEMENTED = HTTP_VERSION + " 501 Not Implemented " + CRLF;		
+	}
 
-    Socket socket;
+	Socket socket;
+	
 
-    // Constructor
-    public HttpRequest(Socket socket) throws Exception
-    {
+	// Constructor
+	public HttpRequest(Socket socket) throws Exception
+	{
 			this.socket = socket;
-    }
+	}
 
-    // Implements the run() method of the Runnable interface
-    public void run()
-    {
+	// Implements the run() method of the Runnable interface
+	public void run()
+	{
 			try {
-			    processRequest();
+			  processRequest();
 			} catch (Exception e) {
-			    System.out.println(e);
+
+				System.err.println(e);
+		
+				try {
+
+					DataOutputStream outs = new DataOutputStream(socket.getOutputStream());
+					outs.writeChars(HTTP_RESPONSE.INTERNAL_SERVER_ERROR);
+					outs.writeChars(CRLF);
+					outs.writeChars("<h1>500 Internal Server Error</h1>");
+					outs.close();
+					socket.close();
+					
+				} catch (Exception e2) {
+					System.err.println(e2);
+				}
 			}
-    }
+	}
 
-    // Process a HTTP request
-    private void processRequest() throws Exception
-    {
-        // Get the input and output streams of the socket.
-				InputStream ins       = socket.getInputStream();
-				DataOutputStream outs = new DataOutputStream(socket.getOutputStream());
+	// Process a HTTP request
+	private void processRequest() throws Exception
+	{
+		// Get the input and output streams of the socket.
+		InputStream ins	   = socket.getInputStream();
+		DataOutputStream outs = new DataOutputStream(socket.getOutputStream());
 
-				// Set up input stream filters
-				BufferedReader br = new BufferedReader(new InputStreamReader(ins));
-				Date d = new Date();
+		// Set up input stream filters
+		BufferedReader br = new BufferedReader(new InputStreamReader(ins));
+		Date d = new Date();
 
-				// Get the request line of the HTTP request
-				String requestLine = br.readLine();
-    
-				// Display the request line
-				System.out.println();
-				System.out.println("Request:");
-				System.out.println("  " + requestLine);
+		// Get the request line of the HTTP request
+		String requestLine = br.readLine();
+	
+		// Display the request line
+		System.out.println();
+		System.out.println("Request:");
+		System.out.println("  " + requestLine);
 
-				String[] tokens = requestLine.split("\\s+");
-				//System.out.println("-->"+tokens.length);
+		String[] tokens = requestLine.split("\\s+");
+		//System.out.println("-->"+tokens.length);
 				
-				String Request = tokens[0];
-				if(tokens.length != 3) {
+		String Request = tokens[0];
+		if(tokens.length != 3) {
 					
-	    		System.out.println("Wrong number of arguments in request!");
-	    		outs.writeChars(RESPONSE_400 + LOCATION + getDateString(d));
+			System.err.println("Wrong number of arguments in request!");
+			outs.writeChars(HTTP_RESPONSE.BAD_REQUEST + getDateHeader(d));
+			outs.writeChars(CRLF);
+			outs.writeChars("<h1>400 Bas Request</h1>");
 	
-				} else if(tokens[1].charAt(0) != '/') {
-					
-	    		System.out.println("illegal url");
-	    		outs.writeChars(RESPONSE_501 + LOCATION + getDateString(d));
+		} else if(tokens[1].charAt(0) != '/') {
+				
+			System.err.println("illegal url");
+			outs.writeChars(HTTP_RESPONSE.NOT_IMPLEMENTED + getDateHeader(d));
+			outs.writeChars(CRLF);
+			outs.writeChars("<h1>501 Not Implemented</h1>");
+			
 	
-				} else if(Request.equals(HTTP_METHOD.GET) || Request.equals(HTTP_METHOD.HEAD)) {
+		} else if(Request.equals(HTTP_METHOD.GET) || Request.equals(HTTP_METHOD.HEAD)) {
 					
-	    		FileInputStream filein;
-	    		try {
+			FileInputStream filein;
+			try {
 		
-						File f = new File("." +tokens[1]);
-						filein = new FileInputStream(f);
-						String response = createHeader(d,f);
-						outs.writeChars(response);
+				File f = new File("." +tokens[1]);
+				filein = new FileInputStream(f);
+				String response = createHeader(d,f);
+				outs.writeChars(response);
 						
-						if(Request.equals(HTTP_METHOD.GET)) {
-		   				sendBytes(filein, outs);	
-						}
+				if(Request.equals(HTTP_METHOD.GET)) {
+					sendBytes(filein, outs);	
+				}
 		
-	    		} catch (FileNotFoundException e) {
-						outs.writeChars(RESPONSE_404 + getDateString(d));
-	    		}
-	
-				} else if(Request.equals(HTTP_METHOD.POST)){
+			} catch (FileNotFoundException e) {
+				
+					outs.writeChars(HTTP_RESPONSE.NOT_FOUND + getDateHeader(d));
+					outs.writeChars(CRLF);
+					outs.writeChars("<h1>404 Not Found</h1>");
 					
-	    		outs.writeChars(RESPONSE_501 + getDateString(d));
-	
-				}
-				else {
-	    		outs.writeChars(RESPONSE_400 + getDateString(d));					
-				}
-	
-	
-				// Close streams and sockets
-				outs.close();
-				br.close();
-				socket.close();
-    	}
-
-    	private String getDateString(Date d){
-				return "Date: " + d.toString() + CRLF;
-    	}
-
-    	private String createHeader(Date d, File f){
-				String response = RESPONSE_200;
-				response += getDateString(d);
-				response += "LOCATION: " + f.getName() +CRLF;
-				response += "Server: Labbserver" + CRLF;
-				response += "Allow: " + HTTP_METHOD.GET + " " + HTTP_METHOD.HEAD+CRLF;
-				response += "Content-Length: " + f.length() +CRLF;
-				response += "Content-Type: " + contentType(f.getName()) +CRLF;
-				response += "Last-Modified: " + new Date(f.lastModified()).toString() +CRLF;
-				return response;
-    	}
-
-    	private static void sendBytes(FileInputStream fins, OutputStream outs) throws Exception
-			{
-				// Coopy buffer
-				byte[] buffer = new byte[1024];
-				int    bytes = 0;
-
-				while ((bytes = fins.read(buffer)) != -1) {
-					outs.write(buffer, 0, bytes);
-				}
 			}
+	
+		} else if(Request.equals(HTTP_METHOD.POST)) {
+					
+			outs.writeChars(HTTP_RESPONSE.NOT_IMPLEMENTED + getDateHeader(d));
+			outs.writeChars(CRLF);
+			outs.writeChars("<h1>501 Not Implemented</h1>");
+	
+		} else {
+				
+			System.err.println("illegal url");
+			outs.writeChars(HTTP_RESPONSE.BAD_REQUEST + getDateHeader(d));		
+			outs.writeChars(CRLF);
+			outs.writeChars("<h1>400 Bas Request</h1>");
+			
+		}
+	
+	
+		// Close streams and sockets
+		outs.close();
+		br.close();
+		socket.close();
+	}
 
-			private static String contentType(String fileName)
-			{
-				if (fileName.toLowerCase().endsWith(".htm") ||
-				    fileName.toLowerCase().endsWith(".html")) {
-				    return "text/html";
-				} else if (fileName.toLowerCase().endsWith(".gif")) {
-				    return "image/gif";
-				} else if (fileName.toLowerCase().endsWith(".jpg")) {
-				    return "image/jpeg";
-				} else {
-				    return "application/octet-stream";
-				}
-    }
+	private String getDateHeader(Date d){
+		return "Date: " + d.toString() + CRLF;
+	}
+
+	private String createHeader(Date d, File f){
+		String response = HTTP_RESPONSE.OK;
+		response += getDateHeader(d);
+		response += "Server: Labbserver" + CRLF;
+		response += "Allow: " + HTTP_METHOD.GET + " " + HTTP_METHOD.HEAD+CRLF;
+		response += "Content-Length: " + f.length() + CRLF;
+		response += "Content-Type: " + contentType(f.getName()) + CRLF;
+		response += "Last-Modified: " + new Date(f.lastModified()).toString() + CRLF;
+		return response;
+	}
+
+	private static void sendBytes(FileInputStream fins, OutputStream outs) throws Exception
+	{
+		// Coopy buffer
+		byte[] buffer = new byte[1024];
+		int	bytes = 0;
+
+		while ((bytes = fins.read(buffer)) != -1) {
+			outs.write(buffer, 0, bytes);
+		}
+	}
+
+	private static String contentType(String fileName)
+	{
+		if (fileName.toLowerCase().endsWith(".htm") || fileName.toLowerCase().endsWith(".html")) {
+			return "text/html";
+		} else if (fileName.toLowerCase().endsWith(".gif")) {
+			return "image/gif";
+		} else if (fileName.toLowerCase().endsWith(".png")) {
+			return "image/png";
+		} else if (fileName.toLowerCase().endsWith(".jpg") || fileName.toLowerCase().endsWith(".jpeg")) {
+			return "image/jpeg";
+		} else {
+			return "application/octet-stream";
+		}
+	}
 }
-
