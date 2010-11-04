@@ -11,14 +11,15 @@ import java.net.InetAddress.*;
 
 public final class WebServer
 {
+	
 	public static void main(String argv[]) throws Exception
 	{
 		// Set port number
-		int port = 0;
+		int port = 7000;
 
 		// Establish the listening socket
 		ServerSocket serverSocket = new ServerSocket(port);
-		System.out.println("Port number is: " + serverSocket.getLocalPort());
+		WebServer.log("Port number is: " + serverSocket.getLocalPort());
 
 
 		// Wait for and process HTTP service requests
@@ -40,6 +41,22 @@ public final class WebServer
 			thread.start();
 		}
 	}
+	
+	final static void log(String s)
+	{
+		System.out.println("LOG: " + s);
+	}
+	
+	final static void errLog(String s)
+	{
+		System.err.println("ERR: " + s);
+	}
+	
+	final static void errLog(Exception e)
+	{
+		e.printStackTrace();
+	}
+	
 }
 
 final class HttpRequest implements Runnable
@@ -49,14 +66,14 @@ final class HttpRequest implements Runnable
 	final static String CRLF = "\r\n";
 
 	//   Recognized HTTP methods
-	final static class HTTP_METHOD
+	final static class HttpMethod
 	{
 		final static String GET  = "GET";
 		final static String HEAD = "HEAD";
 		final static String POST = "POST";
 	}
 	
-	final static class HTTP_RESPONSE
+	final static class HttpResponse
 	{
 		final static String OK = HTTP_VERSION + " 200 OK " + CRLF;
 		final static String NOT_FOUND = HTTP_VERSION + " 404 Not Found " + CRLF;
@@ -65,136 +82,177 @@ final class HttpRequest implements Runnable
 		final static String NOT_IMPLEMENTED = HTTP_VERSION + " 501 Not Implemented " + CRLF;		
 	}
 
-	Socket socket;
+	private Socket socket;
+	private DataOutputStream outs;
+	private BufferedReader br;
 	
 
 	// Constructor
 	public HttpRequest(Socket socket) throws Exception
 	{
 			this.socket = socket;
+			this.outs = new DataOutputStream(this.socket.getOutputStream());
+			this.br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 	}
 
 	// Implements the run() method of the Runnable interface
 	public void run()
 	{
 			try {
+				
 			  processRequest();
+			
 			} catch (Exception e) {
 
-				System.err.println(e);
+				WebServer.errLog(e);
 		
 				try {
 
 					DataOutputStream outs = new DataOutputStream(socket.getOutputStream());
-					outs.writeChars(HTTP_RESPONSE.INTERNAL_SERVER_ERROR);
+					outs.writeChars(HttpResponse.INTERNAL_SERVER_ERROR);
 					outs.writeChars(CRLF);
 					outs.writeChars("<h1>500 Internal Server Error</h1>");
-					outs.close();
-					socket.close();
 					
 				} catch (Exception e2) {
-					System.err.println(e2);
+					
+					WebServer.errLog(e2);
+					
+				}
+				
+			} finally {
+				
+				// Close streams and sockets
+				try	{
+					
+					outs.close();
+					socket.close();	
+					br.close();
+					
+				} catch (Exception e3) {
+					
+					WebServer.errLog(e3);
+					
 				}
 			}
+			
 	}
 
 	// Process a HTTP request
 	private void processRequest() throws Exception
 	{
-		// Get the input and output streams of the socket.
-		InputStream ins	   = socket.getInputStream();
-		DataOutputStream outs = new DataOutputStream(socket.getOutputStream());
-
-		// Set up input stream filters
-		BufferedReader br = new BufferedReader(new InputStreamReader(ins));
-		Date d = new Date();
-
 		// Get the request line of the HTTP request
 		String requestLine = br.readLine();
-	
-		// Display the request line
-		System.out.println();
-		System.out.println("Request:");
-		System.out.println("  " + requestLine);
 
-		String[] tokens = requestLine.split("\\s+");
-		//System.out.println("-->"+tokens.length);
-				
+		// Display the request line
+		WebServer.log("[Request] " + requestLine);
+
+		// split on ASCII 32
+		String[] tokens = requestLine.split(" ");
+		
 		String Request = tokens[0];
 		if(tokens.length != 3) {
 					
-			System.err.println("Wrong number of arguments in request!");
-			outs.writeChars(HTTP_RESPONSE.BAD_REQUEST + getDateHeader(d));
-			outs.writeChars(CRLF);
-			outs.writeChars("<h1>400 Bas Request</h1>");
+			WebServer.errLog("Wrong number of arguments in request!");
+			
+			sendHeader(HttpResponse.BAD_REQUEST);
+			sendText("<h1>400 Bas Request</h1>");
 	
 		} else if(tokens[1].charAt(0) != '/') {
 				
-			System.err.println("illegal url");
-			outs.writeChars(HTTP_RESPONSE.NOT_IMPLEMENTED + getDateHeader(d));
-			outs.writeChars(CRLF);
-			outs.writeChars("<h1>501 Not Implemented</h1>");
+			WebServer.errLog("Illegal URI");
 			
-	
-		} else if(Request.equals(HTTP_METHOD.GET) || Request.equals(HTTP_METHOD.HEAD)) {
+			sendHeader(HttpResponse.NOT_IMPLEMENTED);
+			sendText("<h1>501 Not Implemented</h1>");
+			
+		} else if((Request.equals(HttpMethod.GET) || Request.equals(HttpMethod.HEAD)) && tokens[2].equals(HTTP_VERSION)) {
 					
 			FileInputStream filein;
 			try {
 		
-				File f = new File("." +tokens[1]);
+				File f = new File("." + tokens[1]);
 				filein = new FileInputStream(f);
-				String response = createHeader(d,f);
-				outs.writeChars(response);
+				
+				sendHeader(HttpResponse.OK, f);
 						
-				if(Request.equals(HTTP_METHOD.GET)) {
+				if(Request.equals(HttpMethod.GET)) {
 					sendBytes(filein, outs);	
 				}
 		
 			} catch (FileNotFoundException e) {
 				
-					outs.writeChars(HTTP_RESPONSE.NOT_FOUND + getDateHeader(d));
-					outs.writeChars(CRLF);
-					outs.writeChars("<h1>404 Not Found</h1>");
+				sendHeader(HttpResponse.NOT_FOUND);
+				sendText("<h1>404 Not Found</h1>");
 					
 			}
 	
-		} else if(Request.equals(HTTP_METHOD.POST)) {
+		} else if(Request.equals(HttpMethod.POST)) {
 					
-			outs.writeChars(HTTP_RESPONSE.NOT_IMPLEMENTED + getDateHeader(d));
-			outs.writeChars(CRLF);
-			outs.writeChars("<h1>501 Not Implemented</h1>");
-	
+			sendHeader(HttpResponse.NOT_IMPLEMENTED);
+			sendText("<h1>501 Not Implemented</h1>");
+
 		} else {
 				
-			System.err.println("illegal url");
-			outs.writeChars(HTTP_RESPONSE.BAD_REQUEST + getDateHeader(d));		
-			outs.writeChars(CRLF);
-			outs.writeChars("<h1>400 Bas Request</h1>");
+			WebServer.errLog("Illegal URI");
+			
+			sendHeader(HttpResponse.BAD_REQUEST);
+			sendText("<h1>400 Bas Request</h1>");
 			
 		}
-	
-	
-		// Close streams and sockets
-		outs.close();
-		br.close();
-		socket.close();
+
 	}
 
-	private String getDateHeader(Date d){
-		return "Date: " + d.toString() + CRLF;
-	}
-
-	private String createHeader(Date d, File f){
-		String response = HTTP_RESPONSE.OK;
-		response += getDateHeader(d);
+	private void sendHeader(final String r, File f)
+	{
+		String response = r.toString();
+		response += "Date: " + new Date().toString() + CRLF;
 		response += "Server: Labbserver" + CRLF;
-		response += "Allow: " + HTTP_METHOD.GET + " " + HTTP_METHOD.HEAD+CRLF;
-		response += "Content-Length: " + f.length() + CRLF;
-		response += "Content-Type: " + contentType(f.getName()) + CRLF;
-		response += "Last-Modified: " + new Date(f.lastModified()).toString() + CRLF;
-		return response;
-	}
+		response += "Allow: " + HttpMethod.GET + " " + HttpMethod.HEAD + CRLF;
 
+		if (f != null) {
+			
+			response += "Content-Length: " + f.length() + CRLF;
+			response += "Content-Type: " + contentType(f.getName()) + CRLF;
+			response += "Last-Modified: " + new Date(f.lastModified()).toString() + CRLF;
+			
+		} else {
+			
+			// default content type
+			response += "Content-Type: text/html" + CRLF;
+			
+		}
+		
+		response += CRLF;
+		
+		try {
+
+			outs.writeChars(response);			
+
+		} catch(Exception e) {
+
+			WebServer.errLog(e);
+
+		}
+	}
+	
+	private void sendHeader(final String r)
+	{
+		sendHeader(r, null);		
+	}
+	
+	private void sendText(String s)
+	{	
+		try {
+			
+			outs.writeChars(s);
+			
+		} catch(Exception e) {
+			
+			WebServer.errLog(e);
+			
+		}
+				
+	}
+	
 	private static void sendBytes(FileInputStream fins, OutputStream outs) throws Exception
 	{
 		// Coopy buffer
@@ -204,10 +262,12 @@ final class HttpRequest implements Runnable
 		while ((bytes = fins.read(buffer)) != -1) {
 			outs.write(buffer, 0, bytes);
 		}
+		
 	}
 
 	private static String contentType(String fileName)
 	{
+		
 		if (fileName.toLowerCase().endsWith(".htm") || fileName.toLowerCase().endsWith(".html")) {
 			return "text/html";
 		} else if (fileName.toLowerCase().endsWith(".gif")) {
@@ -219,5 +279,7 @@ final class HttpRequest implements Runnable
 		} else {
 			return "application/octet-stream";
 		}
+		
 	}
+	
 }
