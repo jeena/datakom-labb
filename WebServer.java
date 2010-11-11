@@ -47,12 +47,12 @@ public final class WebServer
 	
 	final static void log(String s)
 	{
-		System.out.println("LOG: " + s);
+		System.out.println("LOG: " + s.trim());
 	}
 	
 	final static void errLog(String s)
 	{
-		System.err.println("ERR: " + s);
+		System.err.println("ERR: " + s.trim());
 	}
 	
 	final static void errLog(Exception e)
@@ -186,21 +186,24 @@ final class HttpRequest implements Runnable
 		if(tokens.length != 3 || tokens[0].length() == 0 || tokens[1].length() == 0 || tokens[2].length() == 0 || !isAHTTPVersion) {
 					
 			WebServer.errLog("Wrong number of arguments in request!");
+			WebServer.errLog(HttpResponse.BAD_REQUEST);
 			
 			sendHeader(HttpResponse.BAD_REQUEST);
 			sendText("<h1>400 Bad Request</h1>");
 	
 		} else if(!tokens[2].equals("HTTP/1.0")) {
 			
+			WebServer.errLog(HttpResponse.NOT_IMPLEMENTED);
+
 			sendHeader(HttpResponse.NOT_IMPLEMENTED);
 			sendText("<h1>501 Not Implemented</h1>");			
 			
 		} else if(tokens[1].charAt(0) != '/') {
 				
-			WebServer.errLog("Illegal URI");
+			WebServer.errLog(HttpResponse.BAD_REQUEST);
 			
-			sendHeader(HttpResponse.NOT_IMPLEMENTED);
-			sendText("<h1>501 Not Implemented</h1>");
+			sendHeader(HttpResponse.BAD_REQUEST);
+			sendText("<h1>400 Bad Request</h1>");
 			
 		} else if((request.equals(HttpMethod.GET) || request.equals(HttpMethod.HEAD)) && tokens[2].equals(HTTP_VERSION)) {
 					
@@ -210,8 +213,8 @@ final class HttpRequest implements Runnable
 				File f = new File("." + tokens[1]);
 				
 				// check if the file has been modified since
-				boolean modifiedSince = headers.containsKey("if-modified-since");
-				if (modifiedSince) {
+				boolean modifiedSince = true;
+				if (headers.containsKey("if-modified-since")) {
 
 					String dateString = headers.get("if-modified-since");
 					SimpleDateFormat format = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz");
@@ -224,12 +227,16 @@ final class HttpRequest implements Runnable
 				
 				if (!modifiedSince) {
 					
+					WebServer.log(HttpResponse.NOT_MODIFIED);
+					
 					sendHeader(HttpResponse.NOT_MODIFIED);
 					sendText("<h1>304 Not Modified</h1>");
 					
 				} else {
 					
 					filein = new FileInputStream(f);
+
+					WebServer.log(HttpResponse.OK);
 
 					sendHeader(HttpResponse.OK, f);
 
@@ -241,6 +248,8 @@ final class HttpRequest implements Runnable
 						
 			} catch (FileNotFoundException e) {
 				
+				WebServer.errLog(HttpResponse.NOT_FOUND);
+				
 				sendHeader(HttpResponse.NOT_FOUND);
 				sendText("<h1>404 Not Found</h1>");
 					
@@ -248,15 +257,17 @@ final class HttpRequest implements Runnable
 	
 		} else if(request.equals(HttpMethod.POST)) {
 					
+			WebServer.errLog(HttpResponse.NOT_IMPLEMENTED);
+
 			sendHeader(HttpResponse.NOT_IMPLEMENTED);
 			sendText("<h1>501 Not Implemented</h1>");
 
 		} else {
 				
-			WebServer.errLog("Illegal URI");
+			WebServer.errLog(HttpResponse.BAD_REQUEST);
 			
 			sendHeader(HttpResponse.BAD_REQUEST);
-			sendText("<h1>400 Bas Request</h1>");
+			sendText("<h1>400 Bad Request</h1>");
 			
 		}
 
