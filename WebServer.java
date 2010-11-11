@@ -8,6 +8,9 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.net.InetAddress.*;
+import java.text.SimpleDateFormat;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
 public final class WebServer
 {
@@ -75,11 +78,12 @@ final class HttpRequest implements Runnable
 	
 	final static class HttpResponse
 	{
-		final static String OK = HTTP_VERSION + " 200 OK " + CRLF;
-		final static String NOT_FOUND = HTTP_VERSION + " 404 Not Found " + CRLF;
-		final static String BAD_REQUEST = HTTP_VERSION + " 400 Bad Request " + CRLF;
-		final static String INTERNAL_SERVER_ERROR = HTTP_VERSION + " 500 Internal Server Error " + CRLF;
-		final static String NOT_IMPLEMENTED = HTTP_VERSION + " 501 Not Implemented " + CRLF;		
+		final static String OK = HTTP_VERSION + " 200 OK" + CRLF;
+		final static String NOT_MODIFIED = HTTP_VERSION + " 304 Not Modified" + CRLF;
+		final static String NOT_FOUND = HTTP_VERSION + " 404 Not Found" + CRLF;
+		final static String BAD_REQUEST = HTTP_VERSION + " 400 Bad Request" + CRLF;
+		final static String INTERNAL_SERVER_ERROR = HTTP_VERSION + " 500 Internal Server Error" + CRLF;
+		final static String NOT_IMPLEMENTED = HTTP_VERSION + " 501 Not Implemented" + CRLF;		
 	}
 
 	private Socket socket;
@@ -143,6 +147,21 @@ final class HttpRequest implements Runnable
 		// Get the request line of the HTTP request
 		String requestLine = br.readLine();
 		
+		// get headers
+		String h = null;
+		Map<String, String> headers = new HashMap<String, String>();
+
+		while	(true) {
+			h = br.readLine();
+
+			if (h.length() == 0) break;
+
+			String[] a = h.split(":", 2);
+			if (a != null && a.length == 2 && a[0] != null && a[0].length() > 0 && a[1] != null && a[1].length() > 1) {
+				headers.put(a[0].toLowerCase().trim(), a[1].trim());
+			}
+		}
+		
 		if (requestLine == null) {
 			WebServer.errLog("Request is empty");
 			return;
@@ -154,14 +173,28 @@ final class HttpRequest implements Runnable
 		// split on ASCII 32
 		String[] tokens = requestLine.split(" ");
 		
-		String Request = tokens[0];
-		if(tokens.length != 3 || tokens[0].length() == 0 || tokens[1].length() == 0 || tokens[2].length() == 0) {
+		String request = tokens[0];
+		
+		boolean isAHTTPVersion = false;
+		if (tokens.length == 3 && tokens[2].length() > 7) {
+			Pattern pattern = Pattern.compile("HTTP/\\d\\.\\d");
+			Matcher matcher = pattern.matcher(tokens[2]);
+			isAHTTPVersion = matcher.find();
+		}
+		
+		
+		if(tokens.length != 3 || tokens[0].length() == 0 || tokens[1].length() == 0 || tokens[2].length() == 0 || !isAHTTPVersion) {
 					
 			WebServer.errLog("Wrong number of arguments in request!");
 			
 			sendHeader(HttpResponse.BAD_REQUEST);
-			sendText("<h1>400 Bas Request</h1>");
+			sendText("<h1>400 Bad Request</h1>");
 	
+		} else if(!tokens[2].equals("HTTP/1.0")) {
+			
+			sendHeader(HttpResponse.NOT_IMPLEMENTED);
+			sendText("<h1>501 Not Implemented</h1>");			
+			
 		} else if(tokens[1].charAt(0) != '/') {
 				
 			WebServer.errLog("Illegal URI");
@@ -169,20 +202,43 @@ final class HttpRequest implements Runnable
 			sendHeader(HttpResponse.NOT_IMPLEMENTED);
 			sendText("<h1>501 Not Implemented</h1>");
 			
-		} else if((Request.equals(HttpMethod.GET) || Request.equals(HttpMethod.HEAD)) && tokens[2].equals(HTTP_VERSION)) {
+		} else if((request.equals(HttpMethod.GET) || request.equals(HttpMethod.HEAD)) && tokens[2].equals(HTTP_VERSION)) {
 					
 			FileInputStream filein;
 			try {
 		
 				File f = new File("." + tokens[1]);
-				filein = new FileInputStream(f);
 				
-				sendHeader(HttpResponse.OK, f);
-						
-				if(Request.equals(HttpMethod.GET)) {
-					sendBytes(filein, outs);	
+				// check if the file has been modified since
+				boolean modifiedSince = headers.containsKey("if-modified-since");
+				if (modifiedSince) {
+
+					String dateString = headers.get("if-modified-since");
+					SimpleDateFormat format = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz");
+
+					Date date = format.parse(dateString);
+					Date modified = new Date(f.lastModified());
+
+					modifiedSince = modified.after(date);
 				}
-		
+				
+				if (!modifiedSince) {
+					
+					sendHeader(HttpResponse.NOT_MODIFIED);
+					sendText("<h1>304 Not Modified</h1>");
+					
+				} else {
+					
+					filein = new FileInputStream(f);
+
+					sendHeader(HttpResponse.OK, f);
+
+					if(request.equals(HttpMethod.GET)) {
+						sendBytes(filein, outs);	
+					}
+					
+				}
+						
 			} catch (FileNotFoundException e) {
 				
 				sendHeader(HttpResponse.NOT_FOUND);
@@ -190,7 +246,7 @@ final class HttpRequest implements Runnable
 					
 			}
 	
-		} else if(Request.equals(HttpMethod.POST)) {
+		} else if(request.equals(HttpMethod.POST)) {
 					
 			sendHeader(HttpResponse.NOT_IMPLEMENTED);
 			sendText("<h1>501 Not Implemented</h1>");
